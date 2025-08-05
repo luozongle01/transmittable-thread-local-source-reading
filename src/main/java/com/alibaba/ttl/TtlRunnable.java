@@ -35,11 +35,19 @@ import static com.alibaba.ttl.TransmittableThreadLocal.Transmitter.*;
  * @since 0.9.0
  */
 public final class TtlRunnable implements Runnable, TtlWrapper<Runnable>, TtlEnhanced, TtlAttachments {
+    /**
+     * 复制的TransmittableThreadLocal的快照
+     */
     private final AtomicReference<Object> capturedRef;
+
+    /**
+     * 实际要执行的方法
+     */
     private final Runnable runnable;
     private final boolean releaseTtlValueReferenceAfterRun;
 
     private TtlRunnable(@NonNull Runnable runnable, boolean releaseTtlValueReferenceAfterRun) {
+        // 此时这个逻辑是在主线程执行的，相当于把主线程的ttl快照复制下来
         this.capturedRef = new AtomicReference<>(capture());
         this.runnable = runnable;
         this.releaseTtlValueReferenceAfterRun = releaseTtlValueReferenceAfterRun;
@@ -50,15 +58,21 @@ public final class TtlRunnable implements Runnable, TtlWrapper<Runnable>, TtlEnh
      */
     @Override
     public void run() {
+        // 这段逻辑在新线程或者线程池中执行
+
+        // 获取出来要复制的TransmittableThreadLocal的数据
         final Object captured = capturedRef.get();
         if (captured == null || releaseTtlValueReferenceAfterRun && !capturedRef.compareAndSet(captured, null)) {
             throw new IllegalStateException("TTL value reference is released after run!");
         }
 
+        // 根据主线程的快照数据进行恢复
         final Object backup = replay(captured);
         try {
+            // 执行业务逻辑
             runnable.run();
         } finally {
+            // 恢复之前的快照
             restore(backup);
         }
     }
